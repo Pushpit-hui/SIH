@@ -1,5 +1,5 @@
 import BisPortal from "../BisPortal";
 
-export default function ReportsAnalyticsPage() {
+export default function ReportsPage() {
   return <BisPortal page="reports" />;
 }
