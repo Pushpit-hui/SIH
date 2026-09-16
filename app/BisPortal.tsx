@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   api,
   Product,
@@ -389,45 +389,35 @@ interface ChatMsg {
 function Assistant() {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<number | undefined>(1);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   const [messages, setMessages] = useState<ChatMsg[]>([
     {
       sender: "assistant",
-      text: "Hello, Pushpit. I can help you identify applicable Indian Standards, understand certification or hallmarking requirements, and plan your compliance journey. I have your **Electric Kettle** profile ready.",
+      text: "Hello, Pushpit. I can help you identify applicable Indian Standards, understand certification or hallmarking requirements, and plan your compliance journey. I have your **Demo Smart Television** profile ready.",
       suggestedPrompts: [
-        "Which BIS standards apply to my Electric Kettle?",
-        "What are the dielectric strength test requirements?",
-        "How do I apply for the ISI mark for home appliances?",
+        "Which BIS standards apply to my smart TV?",
+        "What documents do I need for BIS registration?",
+        "What are my compliance gaps?",
+        "How do I verify a BIS licence?",
       ],
-    },
-    {
-      sender: "user",
-      text: "Which BIS standards apply to my Electric Kettle?",
-    },
-    {
-      sender: "assistant",
-      text: "For a domestic electric kettle, the primary product standard is **IS 4250**. Safety requirements are read with **IS 302-2-15**.",
-      standards: [
-        { code: "IS 4250", title: "Domestic electric kettles" },
-        { code: "IS 302-2-15", title: "Household appliance safety" },
-      ],
-      requirements: [
-        "Electrical safety and dielectric strength test evidence",
-        "Rated capacity, voltage and product marking artwork",
-        "Factory quality-control records",
-      ],
-      nextSteps: [
-        "1. Confirm model and rated capacity against IS 4250.",
-        "2. Upload test reports and final artwork to your Passport.",
-        "3. Start the BIS licence application after evidence review.",
-      ],
-      clarifyingQuestions: [
-        "What is the rated liquid capacity (e.g. 1.5L vs commercial bulk volume)?",
-        "Does the heating element use an automatic boil-dry cut-off mechanism?",
-        "Is the body stainless steel, food-grade polypropylene, or borosilicate glass?",
-      ],
-      sources: ["IS 4250", "IS 302-2-15", "BIS Scheme I"],
     },
   ]);
+
+  useEffect(() => {
+    api.getProducts().then(list => {
+      if (list && list.length > 0) {
+        setProductsList(list);
+        setSelectedProductId(list[0].product_id);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
   const handleSend = async (queryText?: string) => {
     const q = (queryText || question).trim();
@@ -440,7 +430,7 @@ function Assistant() {
     setLoading(true);
 
     try {
-      const res = await api.sendChat(q);
+      const res = await api.sendChat(q, selectedProductId);
       const assistantMsg: ChatMsg = {
         sender: "assistant",
         text: res.answer,
@@ -451,12 +441,12 @@ function Assistant() {
         suggestedPrompts: res.suggested_prompts,
       };
       setMessages(prev => [...prev, assistantMsg]);
-    } catch (err) {
+    } catch (err: any) {
       setMessages(prev => [
         ...prev,
         {
           sender: "assistant",
-          text: "I am having trouble reaching the compliance knowledge base right now. Please verify that the FastAPI backend is running on port 8000.",
+          text: `I am having trouble reaching the compliance knowledge base (${err.message || 'Connection error'}). Please verify that the FastAPI backend is running on port 8000.`,
           sources: ["System Connection Check"],
         },
       ]);
@@ -477,7 +467,7 @@ function Assistant() {
 
       <div className="grid gap-7 xl:grid-cols-[1.35fr_.65fr]">
         <section className="flex min-h-[550px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 p-5">
+          <div className="flex items-center justify-between border-b border-slate-100 p-5">
             <div className="flex items-center gap-3">
               <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-700">
                 <Icon name="sparkle" className="h-5 w-5"/>
@@ -490,6 +480,22 @@ function Assistant() {
                 </p>
               </div>
             </div>
+            {productsList.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="hidden sm:inline">Product context:</span>
+                <select
+                  value={selectedProductId || ""}
+                  onChange={e => setSelectedProductId(Number(e.target.value))}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-blue-700 outline-none focus:border-blue-400"
+                >
+                  {productsList.map(p => (
+                    <option key={p.product_id} value={p.product_id}>
+                      {p.product_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 space-y-5 p-5 sm:p-6 overflow-y-auto max-h-[600px]">
@@ -549,8 +555,9 @@ function Assistant() {
                             <button
                               key={i}
                               type="button"
+                              disabled={loading}
                               onClick={() => handleSend(cq)}
-                              className="w-full text-left rounded-lg border border-amber-300/80 bg-white px-3 py-2 text-xs font-medium text-amber-950 shadow-xs hover:bg-amber-100 hover:border-amber-400 transition flex items-center justify-between gap-2"
+                              className="w-full text-left rounded-lg border border-amber-300/80 bg-white px-3 py-2 text-xs font-medium text-amber-950 shadow-xs hover:bg-amber-100 hover:border-amber-400 transition flex items-center justify-between gap-2 disabled:opacity-60"
                             >
                               <span>{cq}</span>
                               <span className="shrink-0 text-amber-600 font-bold text-sm">→</span>
@@ -568,8 +575,9 @@ function Assistant() {
                             <button
                               key={i}
                               type="button"
+                              disabled={loading}
                               onClick={() => handleSend(sp)}
-                              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 transition"
+                              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 transition disabled:opacity-60"
                             >
                               {sp}
                             </button>
@@ -601,6 +609,7 @@ function Assistant() {
                 Consulting BIS standards and compliance database...
               </div>
             )}
+            <div ref={chatEndRef} />
           </div>
 
           <form
@@ -640,9 +649,11 @@ function Assistant() {
                 "What documents do I need for ISI marking scheme?",
               ].map(prompt => (
                 <button
+                  type="button"
+                  disabled={loading}
                   onClick={() => handleSend(prompt)}
                   key={prompt}
-                  className="w-full rounded-xl border border-slate-200 p-3 text-left text-xs leading-5 text-slate-600 hover:border-blue-200 hover:bg-blue-50 transition"
+                  className="w-full rounded-xl border border-slate-200 p-3 text-left text-xs leading-5 text-slate-600 hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-60 cursor-pointer"
                 >
                   {prompt}
                 </button>
@@ -660,9 +671,11 @@ function Assistant() {
                 "Can a consumer verify this HUID?",
               ].map(item => (
                 <button
+                  type="button"
+                  disabled={loading}
                   onClick={() => handleSend(item)}
                   key={item}
-                  className="block w-full border-b border-slate-100 pb-3 text-left text-xs leading-5 text-slate-600 last:border-0 last:pb-0 hover:text-blue-700"
+                  className="block w-full border-b border-slate-100 pb-3 text-left text-xs leading-5 text-slate-600 last:border-0 last:pb-0 hover:text-blue-700 disabled:opacity-60 cursor-pointer"
                 >
                   {item}
                   <span className="mt-1 block text-[10px] text-slate-400">Recent activity</span>
@@ -2231,7 +2244,13 @@ function Reports({ section = "reports" }: { section?: "reports" | "analytics" })
             <h2 className="font-bold text-slate-900">Reports</h2>
             <p className="mt-1 text-sm text-slate-500">Generate or download product and portfolio summaries.</p>
           </div>
-          <button className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white">Generate report</button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 transition cursor-pointer"
+          >
+            Generate Report (PDF)
+          </button>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           {["Product Compliance Passport", "Requirement Completion Summary", "Alerts & Resolution Performance"].map(title => (
@@ -2239,8 +2258,8 @@ function Reports({ section = "reports" }: { section?: "reports" | "analytics" })
               <Icon name="file" className="h-5 w-5 text-blue-700"/>
               <p className="mt-3 text-sm font-bold text-slate-700">{title}</p>
               <div className="mt-4 flex gap-4 text-xs font-semibold text-blue-700">
-                <button>View</button>
-                <button>Download</button>
+                <button type="button" onClick={() => window.print()} className="hover:underline cursor-pointer">View</button>
+                <button type="button" onClick={() => window.print()} className="hover:underline cursor-pointer">Download</button>
               </div>
             </div>
           ))}
@@ -2251,12 +2270,38 @@ function Reports({ section = "reports" }: { section?: "reports" | "analytics" })
 }
 
 function Settings() {
+  const [notifs, setNotifs] = useState([
+    { id: "std", label: "Standard updates", desc: "Relevant standards and amendment alerts", enabled: true },
+    { id: "req", label: "Requirement reminders", desc: "Evidence and milestone reminders", enabled: true },
+    { id: "app", label: "Application updates", desc: "BIS service and application status", enabled: true },
+    { id: "tip", label: "Product tips", desc: "Guidance for your product categories", enabled: false },
+  ]);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState("");
+
+  const toggleNotif = (id: string) => {
+    setNotifs(prev => prev.map(n => n.id === id ? { ...n, enabled: !n.enabled } : n));
+  };
+
+  const handleSaveProfile = () => {
+    setProfileSaved(true);
+    setTimeout(() => setProfileSaved(false), 3000);
+  };
+
+  const handleChangePassword = () => {
+    setPasswordMsg("Password reset link sent to pushpit1845@gmail.com");
+    setTimeout(() => setPasswordMsg(""), 4000);
+  };
+
   return (
     <Shell page="settings">
       <PageHeading eyebrow="Account and portal" title="Settings" description="Manage your profile, notifications, portal preferences and security."/>
       <div className="mt-7 grid gap-7 xl:grid-cols-2">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <h2 className="font-bold text-slate-900">Profile & organisation</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-slate-900">Profile & organisation</h2>
+            {profileSaved && <Badge tone="green">Profile updated ✓</Badge>}
+          </div>
           <div className="mt-5 flex items-center gap-4">
             <span className="grid h-14 w-14 place-items-center rounded-full bg-blue-700 text-lg font-bold text-white">PK</span>
             <div>
@@ -2270,27 +2315,32 @@ function Settings() {
             <Field label="Email" value="pushpit1845@gmail.com"/>
             <Field label="Location" value="Bengaluru, Karnataka"/>
           </div>
-          <button className="mt-5 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Edit profile</button>
+          <button
+            type="button"
+            onClick={handleSaveProfile}
+            className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-xs transition"
+          >
+            Save Profile Changes
+          </button>
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h2 className="font-bold text-slate-900">Notification preferences</h2>
           <p className="mt-1 text-sm text-slate-500">Choose which compliance updates you receive.</p>
           <div className="mt-4 divide-y divide-slate-100">
-            {[
-              ["Standard updates", "Relevant standards and amendment alerts", true],
-              ["Requirement reminders", "Evidence and milestone reminders", true],
-              ["Application updates", "BIS service and application status", true],
-              ["Product tips", "Guidance for your product categories", false]
-            ].map(([label, desc, enabled]) => (
-              <div className="flex items-center justify-between gap-4 py-4" key={String(label)}>
+            {notifs.map(n => (
+              <div className="flex items-center justify-between gap-4 py-4" key={n.id}>
                 <div>
-                  <p className="text-sm font-semibold text-slate-700">{label as string}</p>
-                  <p className="mt-1 text-xs text-slate-500">{desc as string}</p>
+                  <p className="text-sm font-semibold text-slate-700">{n.label}</p>
+                  <p className="mt-1 text-xs text-slate-500">{n.desc}</p>
                 </div>
-                <span className={`relative h-6 w-11 shrink-0 rounded-full ${enabled ? "bg-blue-700" : "bg-slate-200"}`}>
-                  <i className={`absolute top-1 h-4 w-4 rounded-full bg-white ${enabled ? "left-6" : "left-1"}`}/>
-                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleNotif(n.id)}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer ${n.enabled ? "bg-blue-700" : "bg-slate-200"}`}
+                >
+                  <i className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-all ${n.enabled ? "left-6" : "left-1"}`}/>
+                </button>
               </div>
             ))}
           </div>
@@ -2307,10 +2357,17 @@ function Settings() {
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <h2 className="font-bold text-slate-900">Security & general</h2>
+          {passwordMsg && <p className="mt-2 text-xs font-semibold text-emerald-600 bg-emerald-50 p-2 rounded-lg">{passwordMsg}</p>}
           <div className="mt-5 rounded-xl bg-slate-50 p-4">
             <p className="text-sm font-semibold text-slate-700">Password & sign-in</p>
             <p className="mt-1 text-xs text-slate-500">Keep your account protected with a strong password.</p>
-            <button className="mt-3 text-sm font-semibold text-blue-700">Change password</button>
+            <button
+              type="button"
+              onClick={handleChangePassword}
+              className="mt-3 text-sm font-semibold text-blue-700 hover:underline cursor-pointer"
+            >
+              Reset Password Link
+            </button>
           </div>
           <div className="mt-4 rounded-xl bg-slate-50 p-4">
             <p className="text-sm font-semibold text-slate-700">Last signed in</p>
